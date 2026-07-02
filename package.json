@@ -1,0 +1,26 @@
+{
+  "name": "chess-game",
+  "version": "0.1.0",
+  "description": "A chess game with a chess.com-style UI",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.chess.game",
+    "productName": "Chess",
+    "win": {
+      "target": "nsis"
+    },
+    "files": [
+      "**/*"
+    ]
+  }
+}

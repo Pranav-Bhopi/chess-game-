@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chess</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ============ CUSTOM TITLEBAR ============ -->
+  <div id="titlebar" class="titlebar">
+    <div class="titlebar-drag">
+      <span class="titlebar-icon">♞</span>
+      <span class="titlebar-title">Chess</span>
+    </div>
+    <div class="titlebar-controls">
+      <button id="win-min" class="win-btn" title="Minimize" aria-label="Minimize">
+        <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="4.5" width="8" height="1" fill="currentColor"/></svg>
+      </button>
+      <button id="win-max" class="win-btn" title="Maximize" aria-label="Maximize">
+        <svg class="ico-max" width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+        <svg class="ico-restore" width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="2.5" width="6" height="6" fill="none" stroke="currentColor" stroke-width="1"/><path d="M3 2.5 V1 H8.5 V6.5 H7" fill="none" stroke="currentColor" stroke-width="1"/></svg>
+      </button>
+      <button id="win-close" class="win-btn win-close" title="Close" aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============ HOME SCREEN ============ -->
+  <section id="home-screen" class="screen home">
+    <div class="home-inner">
+      <div class="home-brand">
+        <div class="home-logo">♞</div>
+        <h1>Chess</h1>
+        <p class="home-tagline">Play against the computer or a friend</p>
+      </div>
+
+      <div class="mode-cards">
+        <button class="mode-card active" data-mode="computer">
+          <span class="mode-icon">🤖</span>
+          <span class="mode-title">Play vs Computer</span>
+          <span class="mode-sub">Challenge the engine</span>
+        </button>
+        <button class="mode-card" data-mode="human">
+          <span class="mode-icon">👥</span>
+          <span class="mode-title">Play a Friend</span>
+          <span class="mode-sub">Two players, one board</span>
+        </button>
+      </div>
+
+      <div class="home-options" id="home-options">
+        <div class="field">
+          <label>Play as</label>
+          <div class="segmented" id="home-color">
+            <button data-color="w" class="seg active">White</button>
+            <button data-color="r" class="seg">Random</button>
+            <button data-color="b" class="seg">Black</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="home-difficulty">Difficulty</label>
+          <select id="home-difficulty">
+            <option value="1">Easy</option>
+            <option value="2">Medium</option>
+            <option value="3" selected>Hard</option>
+            <option value="4">Expert</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field time-field">
+        <label for="home-time">Time control</label>
+        <select id="home-time">
+          <option value="none">No clock — unlimited</option>
+          <option value="60+0">Bullet — 1 min</option>
+          <option value="120+1">Bullet — 2|1</option>
+          <option value="180+0">Blitz — 3 min</option>
+          <option value="180+2">Blitz — 3|2</option>
+          <option value="300+0" selected>Blitz — 5 min</option>
+          <option value="300+3">Blitz — 5|3</option>
+          <option value="600+0">Rapid — 10 min</option>
+          <option value="900+10">Rapid — 15|10</option>
+          <option value="1800+0">Classical — 30 min</option>
+        </select>
+      </div>
+
+      <button id="play-btn" class="btn btn-play">Play</button>
+    </div>
+  </section>
+
+  <!-- ============ GAME SCREEN ============ -->
+  <section id="game-screen" class="screen game hidden">
+    <div class="game-layout">
+      <main class="board-area">
+        <!-- Opponent bar (top) -->
+        <div class="player-bar" id="bar-top">
+          <div class="player-id">
+            <span class="avatar" id="avatar-top">♟</span>
+            <span class="player-name" id="name-top">Opponent</span>
+          </div>
+          <div class="captured" id="captured-top"></div>
+          <div class="clock hidden" id="clock-top">10:00</div>
+        </div>
+
+        <div id="board" class="board"></div>
+
+        <!-- Player bar (bottom) -->
+        <div class="player-bar" id="bar-bottom">
+          <div class="player-id">
+            <span class="avatar" id="avatar-bottom">♙</span>
+            <span class="player-name" id="name-bottom">You</span>
+          </div>
+          <div class="captured" id="captured-bottom"></div>
+          <div class="clock hidden" id="clock-bottom">10:00</div>
+        </div>
+      </main>
+
+      <aside class="side-panel">
+        <div class="panel-head">
+          <h2 class="panel-title">Game</h2>
+          <button id="home-btn" class="icon-btn" title="Back to home">✕</button>
+        </div>
+
+        <div class="status">
+          <div class="turn-indicator">
+            <span id="turn-dot" class="dot white"></span>
+            <span id="turn-text">White to move</span>
+          </div>
+          <p id="status-message" class="status-message"></p>
+          <p id="thinking" class="thinking hidden">Computer is thinking…</p>
+        </div>
+
+        <div class="moves">
+          <ol id="move-list" class="move-list"></ol>
+        </div>
+
+        <div class="controls">
+          <button id="takeback" class="btn btn-secondary">Takeback</button>
+          <button id="flip" class="btn btn-secondary">Flip</button>
+        </div>
+        <button id="new-game" class="btn">New game</button>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Promotion picker overlay -->
+  <div id="promo-overlay" class="promo-overlay hidden">
+    <div id="promo-picker" class="promo-picker"></div>
+  </div>
+
+  <!-- Game-over modal -->
+  <div id="gameover-overlay" class="modal-overlay hidden">
+    <div class="modal-card">
+      <button id="gameover-dismiss" class="modal-close" title="Dismiss" aria-label="Dismiss">✕</button>
+      <div class="modal-icon" id="gameover-icon">♚</div>
+      <h2 class="modal-title" id="gameover-title">Checkmate</h2>
+      <p class="modal-sub" id="gameover-sub">White wins</p>
+      <div class="modal-actions">
+        <button id="gameover-newgame" class="btn btn-play">New game</button>
+        <button id="gameover-home" class="btn btn-secondary">Home</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="engine.js"></script>
+  <script src="ai.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
