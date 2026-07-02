@@ -49,10 +49,30 @@
       this.enPassant = null;
       this.history = []; // list of move records (see makeMove)
       this.halfmoveClock = 0; // for 50-move rule
+      // Occurrence count per position (board+turn+castling+ep) for threefold
+      // repetition. Only the real game line is tracked — search's applyMove/
+      // undoMove deliberately don't touch this.
+      this.positionCounts = {};
+      this.positionCounts[this.positionKey()] = 1;
     }
 
     get(r, c) {
       return this.board[r][c];
+    }
+
+    // A compact string identifying a position for repetition detection. Two
+    // positions are "the same" only if the pieces, side to move, castling
+    // rights, and en-passant target all match (per the FIDE repetition rule).
+    positionKey() {
+      let s = '';
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) s += this.board[r][c] || '.';
+      }
+      s += ' ' + this.turn;
+      s += ' ' + ((this.castling.wK ? 'K' : '') + (this.castling.wQ ? 'Q' : '') +
+                  (this.castling.bK ? 'k' : '') + (this.castling.bQ ? 'q' : '') || '-');
+      s += ' ' + (this.enPassant ? this.enPassant[0] + ',' + this.enPassant[1] : '-');
+      return s;
     }
 
     // ---- Pseudo-legal move generation (ignores leaving own king in check) ----
@@ -399,6 +419,9 @@
 
       const san = this.toSAN(candidate);
       const undo = this.applyMove(candidate);
+      // Record the resulting position for repetition tracking.
+      const key = this.positionKey();
+      this.positionCounts[key] = (this.positionCounts[key] || 0) + 1;
       const record = {
         ...candidate,
         san,
@@ -420,6 +443,9 @@
     takeback() {
       const record = this.history.pop();
       if (!record) return null;
+      // Drop this position's occurrence before rewinding the board.
+      const key = this.positionKey();
+      if (this.positionCounts[key]) this.positionCounts[key]--;
       this.undoMove(record.undo);
       return record;
     }
@@ -479,7 +505,8 @@
       const stalemate = !check && !hasMoves;
       const fiftyMove = this.halfmoveClock >= 100;
       const insufficient = this.insufficientMaterial();
-      const draw = stalemate || fiftyMove || insufficient;
+      const repetition = (this.positionCounts[this.positionKey()] || 0) >= 3;
+      const draw = stalemate || fiftyMove || insufficient || repetition;
       let result = null;
       if (checkmate) result = this.turn === WHITE ? '0-1' : '1-0';
       else if (draw) result = '1/2-1/2';
@@ -490,6 +517,7 @@
         stalemate,
         fiftyMove,
         insufficient,
+        repetition,
         draw,
         gameOver: checkmate || draw,
         result,

@@ -7,6 +7,30 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <!-- ============ SPLASH / ENTRANCE ANIMATION ============ -->
+  <div id="splash-screen" class="splash">
+    <div class="splash-inner">
+      <div class="splash-stage">
+        <div class="splash-piece knight" style="--i: 0">
+          <span class="sp-img"></span>
+          <span class="sp-shadow"></span>
+        </div>
+        <div class="splash-piece pawn" style="--i: 1">
+          <span class="sp-img"></span>
+          <span class="sp-shadow"></span>
+        </div>
+        <div class="splash-piece rook" style="--i: 2">
+          <span class="sp-img"></span>
+          <span class="sp-shadow"></span>
+        </div>
+      </div>
+      <div class="splash-brand">
+        <h1 class="splash-title">Chess</h1>
+        <p class="splash-credit">Made by Pranav Bhopi</p>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ CUSTOM TITLEBAR ============ -->
   <div id="titlebar" class="titlebar">
     <div class="titlebar-drag">
@@ -119,7 +143,10 @@
       <aside class="side-panel">
         <div class="panel-head">
           <h2 class="panel-title">Game</h2>
-          <button id="home-btn" class="icon-btn" title="Back to home">✕</button>
+          <div class="panel-head-actions">
+            <button id="sound-toggle" class="icon-btn" title="Toggle sound" aria-label="Toggle sound">🔊</button>
+            <button id="home-btn" class="icon-btn" title="Back to home">✕</button>
+          </div>
         </div>
 
         <div class="status">
@@ -129,6 +156,13 @@
           </div>
           <p id="status-message" class="status-message"></p>
           <p id="thinking" class="thinking hidden">Computer is thinking…</p>
+          <div id="draw-offer" class="draw-offer hidden">
+            <span id="draw-offer-text">A draw is offered</span>
+            <div class="draw-offer-actions">
+              <button id="draw-accept" class="btn btn-secondary">Accept</button>
+              <button id="draw-decline" class="btn btn-secondary">Decline</button>
+            </div>
+          </div>
         </div>
 
         <div class="moves">
@@ -138,6 +172,10 @@
         <div class="controls">
           <button id="takeback" class="btn btn-secondary">Takeback</button>
           <button id="flip" class="btn btn-secondary">Flip</button>
+        </div>
+        <div class="controls">
+          <button id="offer-draw" class="btn btn-secondary">Offer draw</button>
+          <button id="resign" class="btn btn-secondary">Resign</button>
         </div>
         <button id="new-game" class="btn">New game</button>
       </aside>

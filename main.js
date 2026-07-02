@@ -16,6 +16,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.js'),
+      // Allow the entrance whoosh/thud (and game cues) to play on launch
+      // without requiring a prior click.
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 

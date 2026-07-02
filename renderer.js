@@ -24,7 +24,12 @@ for (const a of Object.values(SOUNDS)) {
   a.preload = 'auto';
   a.volume = 0.5;
 }
+// Restore the user's mute preference (defaults to on). Wrapped because
+// localStorage can throw in some sandboxed contexts.
 let soundEnabled = true;
+try {
+  soundEnabled = localStorage.getItem('chess.sound') !== 'off';
+} catch (_) { /* ignore */ }
 
 // Play the cue that best matches a completed move record. Check takes priority
 // over capture, which takes priority over a plain move. Rewinds first so rapid
@@ -80,6 +85,12 @@ const clock = {
 };
 // Set when a player flags (runs out of time). { winner: color, loser: color }.
 let clockGameOver = null;
+// Set when the game ends by agreement or resignation, before the board rules
+// force it. { winner: color|null (null = draw), reason: 'resign'|'draw' }.
+let adjudicated = null;
+// A pending draw offer awaiting a human response, or null. Holds the color that
+// offered so the responder is unambiguous in hotseat play.
+let pendingDrawOffer = null;
 
 // Parse a time-control value like "300+3" (5 min + 3s) or "none".
 function parseTimeControl(value) {
@@ -95,7 +106,7 @@ function isAITurn() {
 
 // The game is over either by the rules (checkmate/draw) or on time.
 function isGameOver() {
-  return game.status().gameOver || clockGameOver !== null;
+  return game.status().gameOver || clockGameOver !== null || adjudicated !== null;
 }
 
 // The board is locked while the AI thinks or when it's the AI's turn.
@@ -329,6 +340,8 @@ function attemptMove(from, to) {
 function finalizeMove(from, to, promotion) {
   const rec = game.move([from.r, from.c], [to.r, to.c], promotion);
   if (!rec) return;
+  // Making a move withdraws/declines any outstanding draw offer.
+  if (pendingDrawOffer) { pendingDrawOffer = null; hideDrawOffer(); }
   lastMove = { from: rec.from, to: rec.to };
   playMoveSound(rec);
   advanceClockAfterMove(rec.color);
@@ -404,6 +417,10 @@ const statusMessage = document.getElementById('status-message');
 const moveList = document.getElementById('move-list');
 const thinkingEl = document.getElementById('thinking');
 const takebackBtn = document.getElementById('takeback');
+const resignBtn = document.getElementById('resign');
+const offerDrawBtn = document.getElementById('offer-draw');
+const drawOfferEl = document.getElementById('draw-offer');
+const drawOfferText = document.getElementById('draw-offer-text');
 
 function updatePanel() {
   const status = game.status();
@@ -413,7 +430,14 @@ function updatePanel() {
   turnText.textContent = whiteToMove ? 'White to move' : 'Black to move';
 
   let msg = '';
-  if (clockGameOver) {
+  if (adjudicated) {
+    if (adjudicated.reason === 'draw') msg = 'Draw by agreement';
+    else {
+      const winnerName = adjudicated.winner === Chess.WHITE ? 'White' : 'Black';
+      const loserName = adjudicated.winner === Chess.WHITE ? 'Black' : 'White';
+      msg = `${loserName} resigned — ${winnerName} wins`;
+    }
+  } else if (clockGameOver) {
     const winnerName = clockGameOver.winner === Chess.WHITE ? 'White' : 'Black';
     const loserName = clockGameOver.loser === Chess.WHITE ? 'White' : 'Black';
     msg = `${loserName} ran out of time — ${winnerName} wins`;
@@ -421,6 +445,7 @@ function updatePanel() {
   else if (status.stalemate) msg = 'Stalemate — draw';
   else if (status.fiftyMove) msg = 'Draw — 50-move rule';
   else if (status.insufficient) msg = 'Draw — insufficient material';
+  else if (status.repetition) msg = 'Draw — threefold repetition';
   else if (status.check) msg = 'Check';
   statusMessage.textContent = msg;
   statusMessage.classList.toggle('game-over', isGameOver());
@@ -448,7 +473,13 @@ function describeOutcome() {
   // Winner color (null for a draw).
   let winner = null;
   let title = '';
-  if (clockGameOver) {
+  if (adjudicated) {
+    if (adjudicated.reason === 'draw') {
+      return { title: 'Draw', sub: 'Draw by agreement', tone: 'draw', winner: null };
+    }
+    winner = adjudicated.winner;
+    title = 'Resignation';
+  } else if (clockGameOver) {
     winner = clockGameOver.winner;
     title = 'Time out';
   } else if (status.checkmate) {
@@ -460,6 +491,8 @@ function describeOutcome() {
     title = 'Draw';
   } else if (status.insufficient) {
     title = 'Draw';
+  } else if (status.repetition) {
+    title = 'Draw';
   } else {
     return null; // not over
   }
@@ -470,6 +503,7 @@ function describeOutcome() {
     if (status.stalemate) sub = 'Stalemate — nobody can move';
     else if (status.fiftyMove) sub = 'Draw by the 50-move rule';
     else if (status.insufficient) sub = 'Draw — insufficient material';
+    else if (status.repetition) sub = 'Draw by threefold repetition';
     return { title, sub, tone: 'draw', winner: null };
   }
 
@@ -480,7 +514,8 @@ function describeOutcome() {
   } else {
     who = `${winner === Chess.WHITE ? 'White' : 'Black'} wins`;
   }
-  const reason = clockGameOver ? 'on time'
+  const reason = adjudicated ? 'by resignation'
+    : clockGameOver ? 'on time'
     : status.checkmate ? 'by checkmate' : '';
   const sub = reason ? `${who} ${reason}` : who;
 
@@ -518,9 +553,14 @@ function hideGameOver() {
 }
 
 function updateControls() {
+  const over = isGameOver();
   if (takebackBtn) {
-    takebackBtn.disabled = aiThinking || game.history.length === 0 || clockGameOver !== null;
+    takebackBtn.disabled = aiThinking || game.history.length === 0 ||
+      clockGameOver !== null || adjudicated !== null;
   }
+  // Resign / draw are only meaningful in an ongoing game and not mid-search.
+  if (resignBtn) resignBtn.disabled = over || aiThinking;
+  if (offerDrawBtn) offerDrawBtn.disabled = over || aiThinking || pendingDrawOffer !== null;
 }
 
 function renderMoveList() {
@@ -753,6 +793,22 @@ function renderPlayerBars() {
   renderTray(capturedTop, topColor, data);
 }
 
+// ---- Sound toggle ----
+const soundToggleBtn = document.getElementById('sound-toggle');
+
+function renderSoundToggle() {
+  soundToggleBtn.textContent = soundEnabled ? '🔊' : '🔇';
+  soundToggleBtn.classList.toggle('muted', !soundEnabled);
+  soundToggleBtn.title = soundEnabled ? 'Mute sound' : 'Unmute sound';
+}
+
+soundToggleBtn.addEventListener('click', () => {
+  soundEnabled = !soundEnabled;
+  try { localStorage.setItem('chess.sound', soundEnabled ? 'on' : 'off'); } catch (_) { /* ignore */ }
+  renderSoundToggle();
+});
+renderSoundToggle();
+
 // ---- In-game controls ----
 document.getElementById('new-game').addEventListener('click', startNewGame);
 
@@ -785,6 +841,66 @@ takebackBtn.addEventListener('click', () => {
   updatePanel();
 });
 
+// ---- Resign & draw offers ----
+// End the game by agreement or resignation. `result` is { winner, reason }.
+function endGame(result) {
+  adjudicated = result;
+  pendingDrawOffer = null;
+  hideDrawOffer();
+  if (clock.enabled) { chargeElapsed(); stopClockInterval(); }
+  clearSelection();
+  renderHighlights();
+  updatePanel();
+}
+
+resignBtn.addEventListener('click', () => {
+  if (isGameOver() || aiThinking) return;
+  // Versus the computer the human resigns; in hotseat the side to move resigns.
+  const loser = settings.opponent === 'computer' ? settings.humanColor : game.turn;
+  endGame({ winner: Chess.opposite(loser), reason: 'resign' });
+});
+
+offerDrawBtn.addEventListener('click', () => {
+  if (isGameOver() || aiThinking || pendingDrawOffer) return;
+  if (settings.opponent === 'computer') {
+    // The engine accepts only if it isn't clearly better in the current position.
+    const evalWhite = ChessAI.evaluate(game);
+    const aiScore = settings.aiColor === Chess.WHITE ? evalWhite : -evalWhite;
+    if (aiScore <= 50) endGame({ winner: null, reason: 'draw' });
+    else flashStatus('Computer declines the draw');
+  } else {
+    // Hotseat: the side to move offers; the opponent accepts or declines.
+    pendingDrawOffer = game.turn;
+    const offerer = game.turn === Chess.WHITE ? 'White' : 'Black';
+    drawOfferText.textContent = `${offerer} offers a draw`;
+    drawOfferEl.classList.remove('hidden');
+    updateControls();
+  }
+});
+
+document.getElementById('draw-accept').addEventListener('click', () => {
+  if (!pendingDrawOffer) return;
+  endGame({ winner: null, reason: 'draw' });
+});
+
+document.getElementById('draw-decline').addEventListener('click', () => {
+  pendingDrawOffer = null;
+  hideDrawOffer();
+  updateControls();
+});
+
+function hideDrawOffer() {
+  drawOfferEl.classList.add('hidden');
+}
+
+// Briefly show a message in the status line, then restore the normal panel.
+let flashTimer = null;
+function flashStatus(text) {
+  statusMessage.textContent = text;
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { flashTimer = null; updatePanel(); }, 1800);
+}
+
 function syncLastMove() {
   const h = game.history;
   lastMove = h.length ? { from: h[h.length - 1].from, to: h[h.length - 1].to } : null;
@@ -798,6 +914,9 @@ function startNewGame() {
   lastMove = null;
   aiThinking = false;
   clockGameOver = null;
+  adjudicated = null;
+  pendingDrawOffer = null;
+  hideDrawOffer();
   gameOverShown = false;
   hideGameOver();
 
@@ -871,6 +990,7 @@ document.getElementById('play-btn').addEventListener('click', () => {
 document.getElementById('home-btn').addEventListener('click', () => {
   stopClockInterval();
   hideGameOver();
+  hideDrawOffer();
   showScreen('home');
 });
 
@@ -911,6 +1031,128 @@ document.getElementById('gameover-dismiss').addEventListener('click', hideGameOv
   const applyMaxState = (isMax) => titlebar.classList.toggle('maximized', !!isMax);
   wc.isMaximized().then(applyMaxState);
   wc.onMaximizedChanged(applyMaxState);
+})();
+
+// ---- Splash sound synth (Web Audio) ----
+// The whoosh (launch) and thud (landing) are synthesized so the app needs no
+// extra audio assets. Kept soft and gated by the same sound toggle as the game
+// cues. A single shared AudioContext is created lazily.
+let splashAudioCtx = null;
+function splashAudio() {
+  if (splashAudioCtx) return splashAudioCtx;
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return null;
+    splashAudioCtx = new Ctx();
+  } catch (_) { return null; }
+  return splashAudioCtx;
+}
+
+// Soft airy whoosh: bandpass-swept white noise with a quick swell and fade.
+function playWhoosh(ctx, when) {
+  const dur = 0.28;
+  const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(500, when);
+  bp.frequency.exponentialRampToValueAtTime(1600, when + dur * 0.5);
+  bp.frequency.exponentialRampToValueAtTime(400, when + dur);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, when);
+  gain.gain.exponentialRampToValueAtTime(0.11, when + 0.06);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+  src.connect(bp).connect(gain).connect(ctx.destination);
+  src.start(when);
+  src.stop(when + dur);
+}
+
+// Firm-but-soft thud: a low sine drop for body plus a short filtered click.
+function playThud(ctx, when) {
+  const osc = ctx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(165, when);
+  osc.frequency.exponentialRampToValueAtTime(55, when + 0.14);
+  const og = ctx.createGain();
+  og.gain.setValueAtTime(0.0001, when);
+  og.gain.exponentialRampToValueAtTime(0.26, when + 0.012);
+  og.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+  osc.connect(og).connect(ctx.destination);
+  osc.start(when);
+  osc.stop(when + 0.22);
+
+  const nlen = Math.ceil(ctx.sampleRate * 0.05);
+  const nb = ctx.createBuffer(1, nlen, ctx.sampleRate);
+  const nd = nb.getChannelData(0);
+  for (let i = 0; i < nlen; i++) nd[i] = (Math.random() * 2 - 1) * (1 - i / nlen);
+  const ns = ctx.createBufferSource();
+  ns.buffer = nb;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 900;
+  const ng = ctx.createGain();
+  ng.gain.setValueAtTime(0.08, when);
+  ng.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+  ns.connect(lp).connect(ng).connect(ctx.destination);
+  ns.start(when);
+  ns.stop(when + 0.05);
+}
+
+// Schedule a whoosh on each piece's launch and a thud on its landing, matching
+// the CSS timings: stagger 0.31s between pieces, touchdown at ~84% of the jump.
+function playSplashSounds() {
+  if (!soundEnabled) return;
+  const ctx = splashAudio();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+  const t0 = ctx.currentTime + 0.03;
+  const STAGGER = 0.425; // matches animation-delay
+  const LAND = 0.714;    // ~84% of the 0.85s jump = touchdown
+  for (let i = 0; i < 3; i++) {
+    playWhoosh(ctx, t0 + i * STAGGER);
+    playThud(ctx, t0 + i * STAGGER + LAND);
+  }
+}
+
+// ---- Splash / entrance animation ----
+// The home menu is mounted immediately underneath; the splash overlays it and
+// plays the staggered three-piece jump (CSS driven), then slides up to reveal
+// the menu. Click-to-skip, and shortened for reduced-motion users.
+(function initSplash() {
+  const splash = document.getElementById('splash-screen');
+  if (!splash) return;
+
+  const reduce = window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Rook settles at ~1.7s; hold a beat before revealing. Short-circuit if the
+  // user prefers reduced motion.
+  const HOLD_MS = reduce ? 350 : 2000;
+
+  if (!reduce) playSplashSounds();
+
+  let dismissed = false;
+  function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
+    clearTimeout(timer);
+    // Cut any scheduled whoosh/thud if the splash is skipped early.
+    if (splashAudioCtx) {
+      try { splashAudioCtx.close(); } catch (_) { /* ignore */ }
+      splashAudioCtx = null;
+    }
+    splash.classList.add('splash-hide');
+    // Remove after the slide/fade transition so it can't trap clicks.
+    splash.addEventListener('transitionend', () => splash.remove(), { once: true });
+    // Fallback removal in case transitionend doesn't fire.
+    setTimeout(() => splash.remove(), 800);
+  }
+
+  const timer = setTimeout(dismiss, HOLD_MS);
+  splash.addEventListener('click', dismiss); // allow skipping
 })();
 
 // ---- Boot ----
